@@ -1,0 +1,90 @@
+{
+  "contract": "idleforge.repository-activation-state/v1",
+  "files": {
+    ".copier-answers.yml": {
+      "sha256": "6156ae2c19c6cc58946e243a9d50a54c8eb8a93e0820da7db21149633d9f61e4"
+    },
+    ".envrc": {
+      "sha256": "7ecaeb2bc568fd6c25e8c0e25ae958132d145ca5d38621ad3a34dcec9a4f3a96"
+    },
+    ".github/workflows/validation.yml": {
+      "sha256": "1582d293c81d7e633e0d6673d209699dbc60584d1e26ecbff10d0ea111ec0850"
+    },
+    ".gitignore": {
+      "sha256": "6eda96c58cae632b518c99efa06f36ce6111bb9b6a6011d31d5df4eab9d0bf8d"
+    },
+    ".idleforge/README.md": {
+      "sha256": "a47cab492daede087cc72aa039b980503881d5ed5f625b37e144b387ba48c79b"
+    },
+    ".idleforge/repository.yaml": {
+      "sha256": "97423a7c6fe0f7b3e6e203920990b7d63272d54c068e77b959c1ea369623c096"
+    },
+    ".idleforge/schema/owner-release-v1.schema.json": {
+      "sha256": "0cc207629b3f4f7517401bbdd36294dcf11ea8d0bd9c6c87ba891c6b8bdaaa00"
+    },
+    ".idleforge/schema/product-provenance-v1.schema.json": {
+      "sha256": "a6c01d18b71befd9f58097c5e1fe4b32495bb83f37b0a1412064685d59da653e"
+    },
+    ".idleforge/schema/release-units-v1.schema.json": {
+      "sha256": "66e6fa3ac73c78381c4f90a2138384d4c0e8f0434309219a06df2c7392609ac5"
+    },
+    ".idleforge/schema/repository-development-v1.schema.json": {
+      "sha256": "47e781e734980f99fd41753ac3e7b68eb266c2452ee11b6897a452b1a803a1b6"
+    },
+    ".idleforge/schema/repository-v1.schema.json": {
+      "sha256": "06ad56c8bfa6fa678b21c5fc9581020bda68a83af75be55f0dc8d87f62d0ca2c"
+    },
+    ".markdown-prose.toml": {
+      "sha256": "a6ff515cd735d0bcc5a364e8dbd788baa40bf0556f1cf6608ab244671aa83c63"
+    },
+    "LICENSE": {
+      "sha256": "729a79c336079be07b5e49369333eae176559bfbd4b6a9aa78803a0d8ee6cdc3"
+    },
+    "README.md": {
+      "sha256": "753b07878e5fdcb426ee68ee9bd91df210e00d5c16a8e50d9e3c88ff413aad80"
+    },
+    "flake.lock": {
+      "sha256": "44d57cfe4612dee7e1d24ccfa7afe646446e8e54c5421fb5b7154586a95c0f01"
+    },
+    "flake.nix": {
+      "sha256": "fcd778359eb458418691d7132cc39e30dc92bfab1eafd476f8a0a59f501eead6"
+    },
+    "nix/checks/default.nix": {
+      "sha256": "ea988037103e097c373e0e22508dfcd4eea1945b0d75f052111d3a158b5c6667"
+    },
+    "nix/packages/default.nix": {
+      "sha256": "9f1130cc0a0fd3aae1aa94384f102c7ef28960e676fbfd162f946d1cdf1b6b5f"
+    },
+    "release-units.json": {
+      "sha256": "fa0c9a7f3c78dc1679879ba2472c083a607cae3d99a429bb3dbe403a53915ff3"
+    },
+    "repository-development.json": {
+      "sha256": "cf40a323e0737e0c0c91863d0e58fe914d25f914a5b32b04d00cad8c096bf979"
+    },
+    "scripts/bootstrap": {
+      "sha256": "c6092c77da5d578d002bbd779b98012df53b0f153a3c0b57f1f70f17948a8204"
+    },
+    "scripts/build": {
+      "sha256": "04849dcc6ad36cff259fa54844271d11b5dc074a8af5e8e66782d4a4bcdd8e72"
+    },
+    "scripts/health": {
+      "sha256": "d25682fdd7035bf47f4d6192f24d7aaf0710ca0f618050e98803a8aa7aa3f53c"
+    },
+    "scripts/provenance": {
+      "sha256": "d6881bf0b48b9294776cbc9da43d9b312b68d09db8ccb208dd4a2b5ebe96a6a9"
+    },
+    "scripts/release-declaration": {
+      "sha256": "5f83d7f2efe34fd4112bc559f536a4dac6fea98cd86c4b12431daa82c899bec2"
+    },
+    "scripts/repository-participation": {
+      "sha256": "5ef026202603520e556933120b841237b56feda0d4e8a4e5128b9ed9a6b55b49"
+    },
+    "scripts/validate": {
+      "sha256": "07cbdb5648d82982a52329022a2f34bc5318e36a67941498c5672669f15b3abf"
+    }
+  },
+  "template": {
+    "revision": "305e76f39456f23720ef9e517fd8a5c9c5dd1895",
+    "source": "idleforge.project-template/public-foundation"
+  }
+}

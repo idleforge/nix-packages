@@ -1,0 +1,6 @@
+#!/nix/store/7ik8057hajl6vq9j40h3jracxjn0bb5x-bash-5.3p15/bin/bash
+set -euo pipefail
+
+
+printf 'No runtime health check applies to this source-only repository.\n'
+

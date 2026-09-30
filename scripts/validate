@@ -1,0 +1,39 @@
+#!/nix/store/7ik8057hajl6vq9j40h3jracxjn0bb5x-bash-5.3p15/bin/bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+shellcheck scripts/*
+bash ./scripts/repository-participation check >/dev/null
+
+check-jsonschema --schemafile .idleforge/schema/repository-v1.schema.json .idleforge/repository.yaml
+test -f .envrc
+test -f flake.nix
+test -f repository-development.json
+if grep -RInE 'idleforge/(agents|project-template)|git@github.com/idleforge/(agents|project-template)' flake.nix flake.lock; then
+  printf 'public scaffold references a private source\n' >&2
+  exit 1
+fi
+
+
+check-jsonschema \
+  --schemafile .idleforge/schema/release-units-v1.schema.json \
+  release-units.json
+while IFS= read -r release_unit; do
+  provenance_file="$(mktemp)"
+  bash ./scripts/provenance "$release_unit" >"$provenance_file"
+  check-jsonschema \
+    --schemafile .idleforge/schema/product-provenance-v1.schema.json \
+    "$provenance_file"
+  rm -f "$provenance_file"
+done < <(jq -r '.units[].id' release-units.json)
+
+
+
+test -f release-units.json
+test -f nix/packages/default.nix
+
+
+
+printf 'nix-packages validation passed\n'

@@ -1,0 +1,52 @@
+_commit: "305e76f39456f23720ef9e517fd8a5c9c5dd1895"
+# Changes to Copier-managed values should be made through a reviewable update.
+
+
+_src_path: "idleforge.project-template/public-foundation"
+adr_scaffolding: false
+author_name: IdleForge
+description: Public Nix packages maintained by IdleForge.
+integration_branch: main
+language: repository-neutral
+license_name: MIT
+nix_package_applicability: required
+project_kind: package-collection
+project_name: Nix Packages
+project_slug: nix-packages
+release_model: single
+release_units:
+-   compatibility: {}
+    eligibility: {}
+    id: nix-packages
+    installed_state_validation:
+    - artifact-digest
+    participation:
+        collector:
+            kind: command
+            value: ./scripts/provenance nix-packages
+        first_party_build_producer: idleforge/nix-packages
+        fleet_observation_update_handoff: true
+        hydration_deployment_owner: idleforge/fleet
+        preserved_third_party_artifact_owner: null
+    rollback:
+        mode: whole-unit
+    runtime_capabilities: []
+    secret_exclusions:
+    - credentials
+    - tokens
+    - private-keys
+    - runtime-secrets
+    semantic_owner: nix-packages
+    surfaces:
+    - nix-packages
+    variants:
+    -   flake_output: default
+        kind: nix
+        name: x86_64-linux-nix
+        origin: first-party
+        systems:
+        - x86_64-linux
+repository_group: infrastructure
+repository_visibility: public
+workflow_stance: direct
+

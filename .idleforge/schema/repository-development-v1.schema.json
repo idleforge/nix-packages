@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idleforge.dev/schemas/repository-development/v1.json",
+  "title": "IdleForge repository development contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "profiles",
+    "systems",
+    "validation",
+    "structure",
+    "nix",
+    "packages",
+    "releases",
+    "renovate",
+    "exemptions"
+  ],
+  "properties": {
+    "contract": { "const": "idleforge.repository-development/v1" },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["repository-neutral", "python", "typescript-node", "rust", "go", "android", "documentation"]
+      }
+    },
+    "systems": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "flakeCheck"],
+      "properties": {
+        "command": { "const": "./scripts/validate" },
+        "flakeCheck": { "const": "validation" }
+      }
+    },
+    "structure": { "$ref": "#/$defs/structure" },
+    "nix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageLayout", "checkLayout", "nixpkgs"],
+      "properties": {
+        "packageLayout": { "enum": ["module", "not-applicable"] },
+        "checkLayout": { "const": "module" },
+        "nixpkgs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy", "reference", "stateVersionSelectsChannel", "rationale"],
+          "properties": {
+            "policy": { "enum": ["stable", "unstable", "exact"] },
+            "reference": { "type": "string", "minLength": 1 },
+            "stateVersionSelectsChannel": { "const": false },
+            "rationale": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "packages": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicability"],
+      "properties": {
+        "applicability": { "enum": ["required", "not-applicable"] },
+        "outputs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "applicability": { "const": "required" } } },
+          "then": { "required": ["outputs"] }
+        },
+        {
+          "if": { "properties": { "applicability": { "const": "not-applicable" } } },
+          "then": { "required": ["reason"] }
+        }
+      ]
+    },
+    "releases": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["applicability", "model"],
+      "properties": {
+        "applicability": { "enum": ["required", "not-applicable"] },
+        "model": { "enum": ["source-only", "single", "multi", "atomic-bundle"] },
+        "plan": { "const": "release-units.json" },
+        "producerProvenance": { "const": "idleforge.product-provenance/v1" },
+        "ownerRelease": { "const": "idleforge.owner-release/v1" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "model": { "const": "source-only" } } },
+          "then": {
+            "properties": { "applicability": { "const": "not-applicable" } },
+            "required": ["reason"],
+            "not": { "required": ["plan"] }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "model": { "enum": ["single", "multi", "atomic-bundle"] }
+            }
+          },
+          "then": {
+            "properties": { "applicability": { "const": "required" } }
+          }
+        }
+      ]
+    },
+    "renovate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nixInputs", "nativeLocks"],
+      "properties": {
+        "nixInputs": { "type": "boolean" },
+        "nativeLocks": { "type": "boolean" }
+      }
+    },
+    "exemptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/exemption" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "nix": {
+            "properties": { "checkLayout": { "const": "module" } },
+            "required": ["checkLayout"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "structure": {
+            "properties": {
+              "slots": { "contains": { "const": "nix/checks" } }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "nix": {
+            "properties": { "packageLayout": { "const": "module" } },
+            "required": ["packageLayout"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "structure": {
+            "properties": {
+              "slots": { "contains": { "const": "nix/packages" } }
+            }
+          },
+          "packages": {
+            "properties": { "applicability": { "const": "required" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "nix": {
+            "properties": { "packageLayout": { "const": "not-applicable" } },
+            "required": ["packageLayout"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "structure": {
+            "properties": {
+              "slots": {
+                "not": { "contains": { "const": "nix/packages" } }
+              }
+            }
+          },
+          "packages": {
+            "properties": { "applicability": { "const": "not-applicable" } }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "structure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "slots", "extensions", "generatedRoots"],
+      "properties": {
+        "class": {
+          "enum": [
+            "single-artifact",
+            "multi-artifact",
+            "meta",
+            "research",
+            "ecosystem-native",
+            "infrastructure-control-plane"
+          ]
+        },
+        "slots": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "src",
+              "apps",
+              "packages",
+              "config",
+              "docs",
+              "scripts",
+              "tests",
+              "schemas",
+              "examples",
+              "fixtures",
+              "archive",
+              "nix/packages",
+              "nix/checks",
+              "nix/modules"
+            ]
+          }
+        },
+        "extensions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/structureExtension" }
+        },
+        "generatedRoots": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/rootName" }
+        },
+        "ownership": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "infrastructureTopology": {
+              "$ref": "#/$defs/infrastructureTopology"
+            }
+          },
+          "minProperties": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "class": { "const": "single-artifact" } } },
+          "then": {
+            "properties": {
+              "slots": {
+                "allOf": [
+                  { "contains": { "const": "src" } },
+                  { "not": { "contains": { "enum": ["apps", "packages"] } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "class": { "const": "multi-artifact" } } },
+          "then": {
+            "anyOf": [
+              {
+                "properties": {
+                  "slots": {
+                    "contains": { "enum": ["apps", "packages"] }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "extensions": {
+                    "contains": {
+                      "required": ["path"],
+                      "properties": {
+                        "semanticClass": {
+                          "enum": ["owner-source", "ecosystem-source"]
+                        }
+                      }
+                    },
+                    "minContains": 2
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": { "class": { "const": "infrastructure-control-plane" } }
+          },
+          "then": {
+            "required": ["ownership"],
+            "properties": {
+              "ownership": { "required": ["infrastructureTopology"] }
+            }
+          }
+        }
+      ]
+    },
+    "structureExtension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["semanticClass", "reason"],
+      "properties": {
+        "path": { "$ref": "#/$defs/rootName" },
+        "rootPattern": { "type": "string", "minLength": 1 },
+        "semanticClass": {
+          "enum": [
+            "ecosystem-source",
+            "owner-source",
+            "contract-data",
+            "research-evidence",
+            "harness-source",
+            "generated-projection",
+            "archive"
+          ]
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "oneOf": [
+        {
+          "required": ["path"],
+          "not": { "required": ["rootPattern"] }
+        },
+        {
+          "required": ["rootPattern"],
+          "not": { "required": ["path"] }
+        }
+      ]
+    },
+    "rootName": {
+      "type": "string",
+      "pattern": "^\\.?[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "infrastructureTopology": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventoryRoot", "topologyRoot", "platformRoot"],
+      "properties": {
+        "inventoryRoot": { "const": "inventory" },
+        "topologyRoot": { "const": "topology" },
+        "platformRoot": { "const": "infra" },
+        "machineSelectorExemptions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/machineSelectorExemption" }
+        }
+      }
+    },
+    "machineSelectorExemption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "path", "reason"],
+      "properties": {
+        "token": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+        "path": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "exemption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "requirement",
+        "scope",
+        "justification",
+        "owner",
+        "status",
+        "removalCondition",
+        "evidence"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "requirement": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "justification": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["temporary", "permanent"] },
+        "reviewBy": { "type": "string", "format": "date" },
+        "removalCondition": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "temporary" } } },
+          "then": { "required": ["reviewBy"] }
+        }
+      ]
+    }
+  }
+}

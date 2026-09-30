@@ -1,0 +1,91 @@
+contract: idleforge.repository/v1
+repository:
+  id: idleforge/nix-packages
+  mission: Public Nix packages maintained by IdleForge.
+  group: infrastructure
+development:
+  contract: idleforge.repository-development/v1
+  path: repository-development.json
+participation:
+
+  class: product-emitting
+
+profiles:
+  - repository-neutral
+
+
+responsibilities:
+  - id: nix-packages
+    summary: Own the Nix Packages implementation and release lifecycle.
+    roles:
+      - mission
+      - implementation-provider
+capabilities:
+  providers: []
+  harnessBindings: []
+  fleetCapabilities: []
+
+workflow:
+  stance: direct
+  integrationBranch: main
+
+  taskBranches: optional
+  pullRequests: optional
+  worktrees:
+    policy: optional
+    root: ~/projects/worktrees
+    naming: <issue-id>-<slug>
+  cleanup:
+    afterIntegration: true
+    evidence:
+      - clean
+      - validated
+      - published
+      - contained
+lifecycle:
+  bootstrap:
+
+    applicability: optional
+    command: ./scripts/bootstrap
+
+  validate:
+    applicability: required
+    command: ./scripts/validate
+  build:
+
+    applicability: required
+    command: ./scripts/build
+
+  install:
+    applicability: not-applicable
+
+    reason: The repository owns the package output but no generic install command; eligible consumers activate it through their own composition or Fleet rollout.
+
+  health:
+
+    applicability: not-applicable
+    reason: This repository has no generic runtime health surface; release units declare installed-state validation explicitly.
+
+  provenance:
+
+    applicability: required
+    command: ./scripts/provenance
+
+  rollback:
+    applicability: not-applicable
+
+    reason: Fleet selects an earlier immutable package identity for rollback.
+
+fleet:
+
+  inventory: true
+  orchestration: rollout
+  observations:
+    - conformance
+    - health
+    - provenance
+    - updates
+
+preservedDependencies: []
+responsibilityMigrations: []
+exemptions: []

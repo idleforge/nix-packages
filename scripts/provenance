@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+require_complete=0
+if [[ "${1:-}" == "--require-complete" ]]; then
+  require_complete=1
+  shift
+fi
+
+unit_id="${1:-}"
+artifact="${2:-}"
+if [[ -z "$unit_id" ]]; then
+  printf 'usage: provenance [--require-complete] <release-unit> [artifact-file]\n' >&2
+  exit 2
+fi
+
+if ! jq -e --arg unit "$unit_id" '.units[] | select(.id == $unit)' release-units.json >/dev/null; then
+  printf 'unknown release unit: %s\n' "$unit_id" >&2
+  exit 2
+fi
+
+source_commit="${SOURCE_REVISION:-}"
+dirty_json=null
+if [[ -n "${SOURCE_DIRTY:-}" ]]; then
+  case "$SOURCE_DIRTY" in
+    true|1) dirty_json=true ;;
+    false|0) dirty_json=false ;;
+    *)
+      printf 'SOURCE_DIRTY must be true, false, 1, or 0\n' >&2
+      exit 2
+      ;;
+  esac
+elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  source_commit="${source_commit:-$(git rev-parse HEAD)}"
+  if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+    dirty_json=true
+  else
+    dirty_json=false
+  fi
+fi
+
+build_timestamp="${BUILD_TIMESTAMP:-}"
+artifact_digest="${ARTIFACT_DIGEST:-}"
+if [[ -n "$artifact" ]]; then
+  if [[ ! -f "$artifact" ]]; then
+    printf 'artifact file not found: %s\n' "$artifact" >&2
+    exit 2
+  fi
+  artifact_digest="sha256:$(sha256sum "$artifact" | cut -d' ' -f1)"
+fi
+
+if ((require_complete)); then
+  [[ -n "$source_commit" ]] || { printf 'complete provenance requires a source revision\n' >&2; exit 1; }
+  [[ "$dirty_json" == false ]] || { printf 'complete provenance requires a clean source tree\n' >&2; exit 1; }
+  [[ -n "$build_timestamp" ]] || { printf 'complete provenance requires BUILD_TIMESTAMP\n' >&2; exit 1; }
+  [[ -n "$artifact_digest" ]] || { printf 'complete provenance requires an artifact digest\n' >&2; exit 1; }
+fi
+
+jq -n \
+  --arg product "$unit_id" \
+  --arg version "${PRODUCT_VERSION:-}" \
+  --arg source_commit "$source_commit" \
+  --arg build_timestamp "$build_timestamp" \
+  --argjson dirty "$dirty_json" \
+  --arg artifact_digest "$artifact_digest" \
+  --arg channel "${PRODUCT_CHANNEL:-}" '
+    {
+      contract: "idleforge.product-provenance/v1",
+      product: $product,
+      version: (if $version == "" then null else $version end),
+      source_commit: (if $source_commit == "" then null else $source_commit end),
+      build_timestamp: (if $build_timestamp == "" then null else $build_timestamp end),
+      dirty: $dirty,
+      artifact_digest: (if $artifact_digest == "" then null else $artifact_digest end),
+      channel: (if $channel == "" then null else $channel end)
+    }
+  '

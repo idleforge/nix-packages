@@ -52,3 +52,15 @@
 # - linear.api-key
 # - github.org
 # - github.repo
+
+# --- BEGIN IDLEFORGE REPOSITORY BEADS POLICY (managed by project-template) ---
+# Canonical repository-generic Beads policy owned by Project Template.
+# Repository-specific connection settings remain outside the managed block.
+import.auto: false
+export.auto: false
+export.git-add: false
+backup.enabled: false
+create.require-description: true
+validation.on-create: "error"
+validation.on-close: "error"
+# --- END IDLEFORGE REPOSITORY BEADS POLICY ---

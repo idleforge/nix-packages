@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idleforge.dev/schemas/release-units-v1.schema.json",
+  "title": "IdleForge repository release units v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "model", "units"],
+  "properties": {
+    "contract": { "const": "idleforge.release-units/v1" },
+    "model": { "enum": ["single", "multi", "atomic-bundle"] },
+    "units": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/releaseUnit" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "model": { "const": "single" } } },
+      "then": { "properties": { "units": { "minItems": 1, "maxItems": 1 } } }
+    },
+    {
+      "if": { "properties": { "model": { "const": "multi" } } },
+      "then": { "properties": { "units": { "minItems": 2 } } }
+    },
+    {
+      "if": { "properties": { "model": { "const": "atomic-bundle" } } },
+      "then": {
+        "properties": {
+          "units": {
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "allOf": [
+                { "$ref": "#/$defs/releaseUnit" },
+                { "properties": { "surfaces": { "minItems": 2 } } }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "stringList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "upstream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "version", "digest"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "version": { "type": ["string", "null"], "minLength": 1 },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "buildExemption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "justification"],
+      "properties": {
+        "reason": { "const": "repository-does-not-build-upstream" },
+        "justification": { "type": "string", "minLength": 1 }
+      }
+    },
+    "collector": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "enum": ["command", "endpoint"] },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    },
+    "participation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first_party_build_producer",
+        "preserved_third_party_artifact_owner",
+        "hydration_deployment_owner",
+        "fleet_observation_update_handoff",
+        "collector"
+      ],
+      "properties": {
+        "first_party_build_producer": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "preserved_third_party_artifact_owner": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "hydration_deployment_owner": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "fleet_observation_update_handoff": { "const": true },
+        "collector": { "$ref": "#/$defs/collector" }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "first_party_build_producer": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "properties": {
+            "preserved_third_party_artifact_owner": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "enum": ["whole-unit", "previous-approved", "repository-defined"]
+        }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "origin"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "kind": { "enum": ["nix", "exported"] },
+        "origin": { "enum": ["first-party", "preserved-external"] },
+        "systems": { "$ref": "#/$defs/stringList" },
+        "platforms": { "$ref": "#/$defs/stringList" },
+        "flake_output": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "media_type": { "type": "string", "minLength": 1 },
+        "anchor_flake_output": { "type": "string", "minLength": 1 },
+        "upstream": { "$ref": "#/$defs/upstream" },
+        "build_exemption": { "$ref": "#/$defs/buildExemption" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "nix" } } },
+          "then": { "required": ["systems", "flake_output"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "exported" } } },
+          "then": { "required": ["platforms", "path", "media_type"] }
+        },
+        {
+          "if": { "properties": { "origin": { "const": "preserved-external" } } },
+          "then": { "required": ["upstream", "build_exemption"] }
+        }
+      ]
+    },
+    "releaseUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "semantic_owner",
+        "surfaces",
+        "variants",
+        "compatibility",
+        "runtime_capabilities",
+        "installed_state_validation",
+        "eligibility",
+        "rollback",
+        "participation",
+        "secret_exclusions"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "semantic_owner": { "type": "string", "minLength": 1 },
+        "surfaces": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/variant" }
+        },
+        "compatibility": { "type": "object" },
+        "runtime_capabilities": { "$ref": "#/$defs/stringList" },
+        "installed_state_validation": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "eligibility": { "type": "object" },
+        "rollback": { "$ref": "#/$defs/rollback" },
+        "participation": { "$ref": "#/$defs/participation" },
+        "secret_exclusions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

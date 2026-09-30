@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idleforge.dev/schemas/product-provenance-v1.schema.json",
+  "title": "IdleForge Product Provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "product",
+    "version",
+    "source_commit",
+    "build_timestamp",
+    "dirty",
+    "artifact_digest",
+    "channel"
+  ],
+  "properties": {
+    "contract": {"const": "idleforge.product-provenance/v1"},
+    "product": {"type": "string", "minLength": 1},
+    "version": {"type": ["string", "null"], "minLength": 1},
+    "source_commit": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-fA-F]{7,64}$"
+    },
+    "build_timestamp": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "dirty": {"type": ["boolean", "null"]},
+    "artifact_digest": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "channel": {"type": ["string", "null"], "minLength": 1}
+  }
+}

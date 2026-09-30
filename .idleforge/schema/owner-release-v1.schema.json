@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idleforge.dev/schemas/owner-release-v1.schema.json",
+  "title": "IdleForge owner release v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "release_unit",
+    "release_id",
+    "semantic_owner",
+    "repository",
+    "source_revision",
+    "dirty",
+    "version",
+    "provenance",
+    "surfaces",
+    "variants",
+    "validation",
+    "compatibility",
+    "runtime_capabilities",
+    "installed_state_validation",
+    "eligibility",
+    "rollback",
+    "participation",
+    "secret_exclusions",
+    "created_at"
+  ],
+  "properties": {
+    "contract": { "const": "idleforge.owner-release/v1" },
+    "release_unit": { "type": "string", "minLength": 1 },
+    "release_id": { "type": "string", "minLength": 1 },
+    "semantic_owner": { "type": "string", "minLength": 1 },
+    "repository": { "type": "string", "minLength": 1 },
+    "source_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{7,64}$"
+    },
+    "dirty": { "type": "boolean" },
+    "version": { "type": ["string", "null"], "minLength": 1 },
+    "provenance": { "$ref": "product-provenance-v1.schema.json" },
+    "surfaces": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "variants": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/variant" }
+    },
+    "validation": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/validation" }
+    },
+    "compatibility": { "type": "object" },
+    "runtime_capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "installed_state_validation": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "eligibility": { "type": "object" },
+    "rollback": { "type": "object" },
+    "participation": { "$ref": "#/$defs/participation" },
+    "secret_exclusions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "upstream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "version", "digest"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "version": { "type": ["string", "null"], "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "buildExemption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "justification"],
+      "properties": {
+        "reason": { "const": "repository-does-not-build-upstream" },
+        "justification": { "type": "string", "minLength": 1 }
+      }
+    },
+    "exportedArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "media_type", "digest", "size"],
+      "properties": {
+        "filename": { "type": "string", "minLength": 1 },
+        "media_type": { "type": "string", "minLength": 1 },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "size": { "type": "integer", "minimum": 0 },
+        "anchor_flake_output": { "type": "string", "minLength": 1 },
+        "anchor_store_path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["nix", "exported"] },
+        "origin": { "enum": ["first-party", "preserved-external"] },
+        "systems": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "platforms": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "flake_output": { "type": "string", "minLength": 1 },
+        "derivation": { "type": "string", "minLength": 1 },
+        "store_path": { "type": "string", "minLength": 1 },
+        "nar_hash": { "type": "string", "pattern": "^sha256-[A-Za-z0-9+/=]+$" },
+        "closure_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "exported_artifacts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/exportedArtifact" }
+        },
+        "upstream": { "$ref": "#/$defs/upstream" },
+        "build_exemption": { "$ref": "#/$defs/buildExemption" }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "result"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "result": { "enum": ["passed", "failed"] },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
+    "participation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first_party_build_producer",
+        "preserved_third_party_artifact_owner",
+        "hydration_deployment_owner",
+        "fleet_observation_update_handoff",
+        "collector"
+      ],
+      "properties": {
+        "first_party_build_producer": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "preserved_third_party_artifact_owner": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "hydration_deployment_owner": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "fleet_observation_update_handoff": { "const": true },
+        "collector": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": { "enum": ["command", "endpoint"] },
+            "value": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "first_party_build_producer": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "properties": {
+            "preserved_third_party_artifact_owner": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    }
+  }
+}

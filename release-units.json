@@ -1,0 +1,49 @@
+{
+  "contract": "idleforge.release-units/v1",
+  "model": "single",
+  "units": [
+  {
+    "compatibility": {},
+    "eligibility": {},
+    "id": "nix-packages",
+    "installed_state_validation": [
+      "artifact-digest"
+    ],
+    "participation": {
+      "collector": {
+        "kind": "command",
+        "value": "./scripts/provenance nix-packages"
+      },
+      "first_party_build_producer": "idleforge/nix-packages",
+      "fleet_observation_update_handoff": true,
+      "hydration_deployment_owner": "idleforge/fleet",
+      "preserved_third_party_artifact_owner": null
+    },
+    "rollback": {
+      "mode": "whole-unit"
+    },
+    "runtime_capabilities": [],
+    "secret_exclusions": [
+      "credentials",
+      "tokens",
+      "private-keys",
+      "runtime-secrets"
+    ],
+    "semantic_owner": "nix-packages",
+    "surfaces": [
+      "nix-packages"
+    ],
+    "variants": [
+      {
+        "flake_output": "default",
+        "kind": "nix",
+        "name": "x86_64-linux-nix",
+        "origin": "first-party",
+        "systems": [
+          "x86_64-linux"
+        ]
+      }
+    ]
+  }
+]
+}

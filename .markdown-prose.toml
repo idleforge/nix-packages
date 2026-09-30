@@ -1,0 +1,14 @@
+version = 1
+generated_prefixes = [
+  ".agents/skills/",
+  ".claude/skills/",
+  ".idleforge/providers/",
+  "docs/managed-policy/",
+]
+generated_paths = [
+  ".beads/PRIME.md",
+  ".beads/README.md",
+  ".idleforge/README.md",
+]
+generated_globs = []
+managed_markers = ["<!-- managed:", "managed-by: idleforge/"]

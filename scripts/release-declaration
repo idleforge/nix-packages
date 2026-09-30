@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+require_clean=0
+if [[ "${1:-}" == "--require-clean" ]]; then
+  require_clean=1
+  shift
+fi
+
+unit_id="${1:-}"
+if [[ -z "$unit_id" ]]; then
+  printf 'usage: release-declaration [--require-clean] <release-unit>\n' >&2
+  exit 2
+fi
+
+unit="$(jq -ce --arg unit "$unit_id" '.units[] | select(.id == $unit)' release-units.json)" || {
+  printf 'unknown release unit: %s\n' "$unit_id" >&2
+  exit 2
+}
+
+bash ./scripts/validate >/dev/null
+
+variants='[]'
+first_digest=''
+while IFS= read -r variant; do
+  kind="$(jq -r '.kind' <<<"$variant")"
+  name="$(jq -r '.name' <<<"$variant")"
+  origin="$(jq -r '.origin' <<<"$variant")"
+  upstream="$(jq -c '.upstream // null' <<<"$variant")"
+  build_exemption="$(jq -c '.build_exemption // null' <<<"$variant")"
+
+  case "$kind" in
+    nix)
+      flake_output="$(jq -r '.flake_output' <<<"$variant")"
+      mapfile -t store_paths < <(
+        nix build ".#${flake_output}" --no-link --print-out-paths --no-update-lock-file
+      )
+      if [[ -z "${store_paths[0]-}" || -n "${store_paths[1]-}" ]]; then
+        printf 'release variant %s must resolve to exactly one Nix output\n' "$name" >&2
+        exit 1
+      fi
+      store_path="${store_paths[0]}"
+      path_info="$(nix path-info --json --json-format 1 "$store_path")"
+      nar_hash="$(jq -r --arg path "$store_path" '.[$path].narHash' <<<"$path_info")"
+      derivation="$(nix path-info --derivation "$store_path")"
+      closure_digest="sha256:$(
+        nix path-info --recursive "$store_path" | LC_ALL=C sort | sha256sum | cut -d' ' -f1
+      )"
+      systems="$(jq -c '.systems' <<<"$variant")"
+      resolved="$(jq -n \
+        --arg name "$name" \
+        --arg kind "$kind" \
+        --arg origin "$origin" \
+        --argjson systems "$systems" \
+        --arg flake_output "$flake_output" \
+        --arg derivation "$derivation" \
+        --arg store_path "$store_path" \
+        --arg nar_hash "$nar_hash" \
+        --arg closure_digest "$closure_digest" \
+        --argjson upstream "$upstream" \
+        --argjson build_exemption "$build_exemption" '
+          {
+            name: $name,
+            kind: $kind,
+            origin: $origin,
+            systems: $systems,
+            flake_output: $flake_output,
+            derivation: $derivation,
+            store_path: $store_path,
+            nar_hash: $nar_hash,
+            closure_digest: $closure_digest
+          }
+          + (if $upstream == null then {} else {upstream: $upstream} end)
+          + (if $build_exemption == null then {} else {build_exemption: $build_exemption} end)
+        ')"
+      first_digest="${first_digest:-$closure_digest}"
+      ;;
+    exported)
+      artifact_path="$(jq -r '.path' <<<"$variant")"
+      if [[ ! -f "$artifact_path" ]]; then
+        printf 'release variant %s artifact is missing: %s\n' "$name" "$artifact_path" >&2
+        exit 1
+      fi
+      artifact_digest="sha256:$(sha256sum "$artifact_path" | cut -d' ' -f1)"
+      artifact_size="$(stat -c '%s' "$artifact_path")"
+      media_type="$(jq -r '.media_type' <<<"$variant")"
+      platforms="$(jq -c '.platforms' <<<"$variant")"
+      anchor_flake_output="$(jq -r '.anchor_flake_output // empty' <<<"$variant")"
+      anchor='{}'
+      if [[ -n "$anchor_flake_output" ]]; then
+        mapfile -t anchor_paths < <(
+          nix build ".#${anchor_flake_output}" --no-link --print-out-paths --no-update-lock-file
+        )
+        if [[ -z "${anchor_paths[0]-}" || -n "${anchor_paths[1]-}" ]]; then
+          printf 'release variant %s anchor must resolve to exactly one Nix output\n' "$name" >&2
+          exit 1
+        fi
+        anchor="$(jq -n \
+          --arg output "$anchor_flake_output" \
+          --arg path "${anchor_paths[0]}" \
+          '{anchor_flake_output: $output, anchor_store_path: $path}')"
+      fi
+      exported_artifact="$(jq -n \
+        --arg filename "$(basename "$artifact_path")" \
+        --arg media_type "$media_type" \
+        --arg digest "$artifact_digest" \
+        --argjson size "$artifact_size" \
+        --argjson anchor "$anchor" '
+          {filename: $filename, media_type: $media_type, digest: $digest, size: $size} + $anchor
+        ')"
+      resolved="$(jq -n \
+        --arg name "$name" \
+        --arg kind "$kind" \
+        --arg origin "$origin" \
+        --argjson platforms "$platforms" \
+        --argjson artifact "$exported_artifact" \
+        --argjson upstream "$upstream" \
+        --argjson build_exemption "$build_exemption" '
+          {
+            name: $name,
+            kind: $kind,
+            origin: $origin,
+            platforms: $platforms,
+            exported_artifacts: [$artifact]
+          }
+          + (if $upstream == null then {} else {upstream: $upstream} end)
+          + (if $build_exemption == null then {} else {build_exemption: $build_exemption} end)
+        ')"
+      first_digest="${first_digest:-$artifact_digest}"
+      ;;
+    *)
+      printf 'unsupported release variant kind: %s\n' "$kind" >&2
+      exit 2
+      ;;
+  esac
+
+  variants="$(jq -c --argjson variant "$resolved" '. + [$variant]' <<<"$variants")"
+done < <(jq -c '.variants[]' <<<"$unit")
+
+created_at="${BUILD_TIMESTAMP:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"
+provenance_args=("$unit_id")
+if ((require_clean)); then
+  provenance_args=(--require-complete "$unit_id")
+fi
+provenance="$(
+  ARTIFACT_DIGEST="$first_digest" \
+  BUILD_TIMESTAMP="$created_at" \
+    ./scripts/provenance "${provenance_args[@]}"
+)"
+
+source_revision="$(jq -r '.source_commit // empty' <<<"$provenance")"
+dirty="$(jq -r '.dirty' <<<"$provenance")"
+if [[ -z "$source_revision" || "$dirty" == null ]]; then
+  printf 'owner release declaration requires Git source revision and dirty state\n' >&2
+  exit 1
+fi
+if ((require_clean)) && [[ "$dirty" != false ]]; then
+  printf 'durable owner release declaration requires a clean source tree\n' >&2
+  exit 1
+fi
+
+identity_digest="sha256:$(
+  jq -cS -n --argjson provenance "$provenance" --argjson variants "$variants" \
+    '{provenance: $provenance, variants: $variants}' | sha256sum | cut -d' ' -f1
+)"
+identity_short="$(printf '%s\n' "${identity_digest#sha256:}" | cut -c1-12)"
+release_id="${unit_id}/${source_revision:0:12}+sha256-${identity_short}"
+
+jq -n \
+  --arg unit "$unit_id" \
+  --arg release_id "$release_id" \
+  --arg repository "idleforge/nix-packages" \
+  --arg source_revision "$source_revision" \
+  --argjson dirty "$dirty" \
+  --arg version "${PRODUCT_VERSION:-}" \
+  --argjson provenance "$provenance" \
+  --argjson variants "$variants" \
+  --argjson unit_plan "$unit" \
+  --arg created_at "$created_at" '
+    {
+      contract: "idleforge.owner-release/v1",
+      release_unit: $unit,
+      release_id: $release_id,
+      semantic_owner: $unit_plan.semantic_owner,
+      repository: $repository,
+      source_revision: $source_revision,
+      dirty: $dirty,
+      version: (if $version == "" then null else $version end),
+      provenance: $provenance,
+      surfaces: $unit_plan.surfaces,
+      variants: $variants,
+      validation: [{name: "canonical-validation", result: "passed", evidence: "./scripts/validate"}],
+      compatibility: $unit_plan.compatibility,
+      runtime_capabilities: $unit_plan.runtime_capabilities,
+      installed_state_validation: $unit_plan.installed_state_validation,
+      eligibility: $unit_plan.eligibility,
+      rollback: $unit_plan.rollback,
+      participation: $unit_plan.participation,
+      secret_exclusions: $unit_plan.secret_exclusions,
+      created_at: $created_at
+    }
+  '

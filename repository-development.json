@@ -1,0 +1,74 @@
+{
+  "contract": "idleforge.repository-development/v1",
+  "profiles": [
+    "repository-neutral"
+  ],
+  "systems": ["x86_64-linux"],
+  "validation": {
+    "command": "./scripts/validate",
+    "flakeCheck": "validation"
+  },
+  "structure": {
+    "class": "meta",
+    "slots": [
+
+
+
+      "scripts",
+
+
+
+      "nix/packages",
+
+      "nix/checks"
+    ],
+    "extensions": [],
+
+    "generatedRoots": [".direnv"]
+
+  },
+  "nix": {
+    "packageLayout": "module",
+    "checkLayout": "module",
+    "nixpkgs": {
+      "policy": "unstable",
+      "reference": "https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/0.1",
+      "stateVersionSelectsChannel": false,
+      "rationale": "Repository development tooling follows reviewed weekly Nixpkgs updates after Determinate Systems' seven-day cooldown."
+    }
+  },
+  "packages": {
+
+    "applicability": "required",
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    "outputs": ["nix-packages", "default"]
+
+  },
+  "releases": {
+
+    "applicability": "required",
+    "model": "single",
+    "plan": "release-units.json",
+    "producerProvenance": "idleforge.product-provenance/v1",
+    "ownerRelease": "idleforge.owner-release/v1"
+
+  },
+  "renovate": {
+    "nixInputs": true,
+    "nativeLocks": true
+  },
+  "exemptions": []
+}

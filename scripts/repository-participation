@@ -1,0 +1,225 @@
+#!/nix/store/7ik8057hajl6vq9j40h3jracxjn0bb5x-bash-5.3p15/bin/bash
+set -euo pipefail
+
+repo_root="${IDLEFORGE_REPOSITORY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+default_contract="$repo_root/.idleforge/repository.yaml"
+
+if [[ -n "${IDLEFORGE_REPOSITORY_SCHEMA:-}" ]]; then
+  schema="$IDLEFORGE_REPOSITORY_SCHEMA"
+elif [[ -f "$repo_root/schemas/repository.schema.json" ]]; then
+  schema="$repo_root/schemas/repository.schema.json"
+else
+  schema="$repo_root/.idleforge/schema/repository-v1.schema.json"
+fi
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  repository-participation check [contract]
+  repository-participation primitive <id> [contract]
+  repository-participation fleet [contract]
+EOF
+  exit 2
+}
+
+require_file() {
+  local path="$1"
+  if [[ ! -f "$path" ]]; then
+    jq -n --arg source "$path" '{valid: false, source: $source, error: "file not found"}'
+    exit 2
+  fi
+}
+
+invalid_result() {
+  local source="$1"
+  local error="$2"
+  jq -n \
+    --arg contract 'idleforge.repository/v1' \
+    --arg source "$source" \
+    --arg error "$error" \
+    '{contract: $contract, valid: false, source: $source, error: $error}'
+  exit 1
+}
+
+check_references() {
+  local contract="$1"
+  local development_path development_file development_schema
+  local participation_profiles development_profiles
+  local participation_class repository_group
+  local references lifecycle_commands referenced_path command_path
+
+  development_path="$(yq -r '.development.path' "$contract")"
+  development_file="$repo_root/$development_path"
+  if [[ -n "${IDLEFORGE_REPOSITORY_DEVELOPMENT_SCHEMA:-}" ]]; then
+    development_schema="$IDLEFORGE_REPOSITORY_DEVELOPMENT_SCHEMA"
+  else
+    development_schema="$repo_root/schemas/repository-development.schema.json"
+  fi
+  if [[ ! -f "$development_schema" && -z "${IDLEFORGE_REPOSITORY_DEVELOPMENT_SCHEMA:-}" ]]; then
+    development_schema="$repo_root/.idleforge/schema/repository-development-v1.schema.json"
+  fi
+  [[ -f "$development_file" ]] || \
+    invalid_result "$contract" "missing development contract: $development_path"
+  [[ -f "$development_schema" ]] || \
+    invalid_result "$contract" "missing repository development schema"
+
+  if ! check-jsonschema --output-format json \
+    --schemafile "$development_schema" "$development_file" >/dev/null 2>&1; then
+    invalid_result "$contract" "repository development contract does not conform"
+  fi
+
+  participation_profiles="$(yq -o=json -I=0 '.profiles' "$contract")"
+  development_profiles="$(jq -c '.profiles' "$development_file")"
+  if ! jq -e -n \
+    --argjson participation "$participation_profiles" \
+    --argjson development "$development_profiles" '
+      def quality_profiles:
+        ["repository-neutral", "python", "typescript-node", "go", "rust", "android", "documentation"];
+      ([
+        $participation[] |
+        select(. as $profile | quality_profiles | index($profile))
+      ] | sort) == ($development | sort)
+    ' >/dev/null; then
+    invalid_result "$contract" \
+      "participation and development quality profiles differ"
+  fi
+
+  participation_class="$(yq -r '.participation.class' "$contract")"
+  repository_group="$(yq -r '.repository.group' "$contract")"
+  if ! jq -e \
+    --arg participation_class "$participation_class" \
+    --arg repository_group "$repository_group" '
+      def temporary_exemption($requirement):
+        any(.exemptions[]?;
+          .requirement == $requirement and .status == "temporary"
+        );
+      def release_field_or_exemption($field; $requirement):
+        ((.releases[$field] // "") != "") or temporary_exemption($requirement);
+      def release_metadata_complete_or_exempt:
+        release_field_or_exemption("plan"; "releases.plan") and
+        release_field_or_exemption("producerProvenance"; "releases.producerProvenance") and
+        release_field_or_exemption("ownerRelease"; "releases.ownerRelease");
+      (.releases.model // "") as $release_model |
+      (.releases.applicability // "") as $release_applicability |
+      (.packages.applicability // "") as $package_applicability |
+      (.packages.outputs // []) as $package_outputs |
+      if $participation_class == "product-emitting" then
+        ($release_applicability == "required") and
+        ($release_model == "single" or $release_model == "multi" or $release_model == "atomic-bundle") and
+        ($package_applicability == "required") and
+        (($package_outputs | length) > 0) and
+        (($package_outputs | index("default") != null) or temporary_exemption("packages.default")) and
+        release_metadata_complete_or_exempt
+      elif $participation_class == "environment-only" then
+        ($release_applicability == "not-applicable") and ($release_model == "source-only")
+      elif $participation_class == "research-spike-only" then
+        ($repository_group == "research") and
+        ($release_applicability == "not-applicable") and
+        ($release_model == "source-only")
+      elif $participation_class == "explicit-exemption" then
+        ($release_applicability == "required") and
+        ($release_model == "single" or $release_model == "multi" or $release_model == "atomic-bundle") and
+        ($package_applicability == "not-applicable") and
+        release_metadata_complete_or_exempt
+      else
+        false
+      end
+    ' "$development_file" >/dev/null; then
+    invalid_result "$contract" \
+      "participation class contradicts repository development contract or has an unexempted migration gap"
+  fi
+
+  if [[ "$participation_class" == "product-emitting" && -f "$repo_root/README.md" ]] && \
+    grep -Eq 'home-manager[[:space:]]+(switch|build)|release-dev|--override|attic[[:space:]]+(login|push)|ATTIC(_SERVER)?_TOKEN|ssh[[:space:]]+[^[:space:]]*vmd[[:digit:]]+|git[[:space:]]+-C[[:space:]]+[^[:space:]]*fleet' \
+      "$repo_root/README.md"; then
+    invalid_result "$contract" \
+      "product guidance contains a direct or legacy publication/deployment path"
+  fi
+
+  if ! references="$(
+    yq -r '
+      (.capabilities.providers[].docs // ""),
+      (.capabilities.harnessBindings[].docs // ""),
+      (.capabilities.fleetCapabilities[].docs // "")
+    ' "$contract"
+  )"; then
+    invalid_result "$contract" "cannot read local guidance references"
+  fi
+  while IFS= read -r referenced_path; do
+    [[ -z "$referenced_path" || "$referenced_path" == http://* || \
+      "$referenced_path" == https://* ]] && continue
+    [[ -f "$repo_root/$referenced_path" ]] || \
+      invalid_result "$contract" "missing local guidance: $referenced_path"
+  done <<<"$references"
+
+  if ! lifecycle_commands="$(yq -r '.lifecycle[].command // ""' "$contract")"; then
+    invalid_result "$contract" "cannot read lifecycle commands"
+  fi
+  while IFS= read -r command_path; do
+    [[ "$command_path" == ./* ]] || continue
+    command_path="${command_path%% *}"
+    [[ -x "$repo_root/${command_path#./}" ]] || \
+      invalid_result "$contract" "missing lifecycle command: $command_path"
+  done <<<"$lifecycle_commands"
+}
+
+command="${1:-check}"
+if (($# > 0)); then
+  shift
+fi
+
+case "$command" in
+  check)
+    contract="${1:-$default_contract}"
+    require_file "$contract"
+    require_file "$schema"
+
+    if validation="$(
+      check-jsonschema --force-filetype yaml --output-format json \
+        --schemafile "$schema" "$contract" 2>&1
+    )"; then
+      check_references "$contract"
+      repository="$(yq -r '.repository.id' "$contract")"
+      jq -n \
+        --arg contract 'idleforge.repository/v1' \
+        --arg repository "$repository" \
+        --arg source "$contract" \
+        '{contract: $contract, repository: $repository, valid: true, source: $source}'
+    else
+      jq -n \
+        --arg contract 'idleforge.repository/v1' \
+        --arg source "$contract" \
+        --arg errors "$validation" \
+        '{contract: $contract, valid: false, source: $source, errors: $errors}'
+      exit 1
+    fi
+    ;;
+  primitive)
+    (($# > 0)) || usage
+    primitive_id="$1"
+    contract="${2:-$default_contract}"
+    require_file "$contract"
+    export primitive_id
+    result="$(
+      yq -o=json \
+        '.capabilities.providers[] | select(.id == env(primitive_id))' \
+        "$contract"
+    )"
+    if [[ -z "$result" ]]; then
+      jq -n \
+        --arg id "$primitive_id" \
+        --arg source "$contract" \
+        '{found: false, id: $id, source: $source}'
+      exit 1
+    fi
+    printf '%s\n' "$result"
+    ;;
+  fleet)
+    contract="${1:-$default_contract}"
+    require_file "$contract"
+    yq -o=json '.fleet' "$contract"
+    ;;
+  *)
+    usage
+    ;;
+esac
