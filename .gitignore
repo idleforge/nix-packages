@@ -4,3 +4,4 @@ target/
 
 # Beads runtime state (Fleet-owned, local only)
 .beads/
+.beads.gate.lock
