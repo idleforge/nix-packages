@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "nixpkg",
-  "project_id": "19d7d20a-f61a-4462-8564-1e2c2b3f40d3"
-}

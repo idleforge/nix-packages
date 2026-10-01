@@ -1,0 +1,6 @@
+{
+  "contract": "idleforge.repository-beads/v1",
+  "enabled": true,
+  "prefix": "nixpkg",
+  "role": "maintainer"
+}

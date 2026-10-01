@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://idleforge.dev/schemas/repository-beads-v1.schema.json",
+  "title": "IdleForge Repository Beads Participation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "enabled", "prefix", "role"],
+  "properties": {
+    "contract": {"const": "idleforge.repository-beads/v1"},
+    "enabled": {"const": true},
+    "prefix": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"},
+    "role": {"enum": ["maintainer", "contributor"]}
+  }
+}
