@@ -5,7 +5,7 @@ _commit: "305e76f39456f23720ef9e517fd8a5c9c5dd1895"
 _src_path: "idleforge.project-template/public-foundation"
 adr_scaffolding: false
 author_name: IdleForge
-description: Public Nix packages maintained by IdleForge.
+description: Standalone Nix packages tailored to IdleForge.
 integration_branch: main
 language: repository-neutral
 license_name: MIT
