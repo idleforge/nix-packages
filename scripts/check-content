@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+while IFS= read -r -d '' path; do
+  jq empty "$path"
+done < <(fd --hidden --no-require-git --type f --extension json --exclude .git --exclude .direnv --print0)
+
+while IFS= read -r -d '' path; do
+  yq eval '.' "$path" >/dev/null
+done < <(
+  fd --hidden --no-require-git --type f --extension yaml --extension yml --exclude .git --exclude .direnv --print0
+)
+
+while IFS= read -r -d '' path; do
+  taplo check "$path"
+done < <(fd --hidden --no-require-git --type f --extension toml --exclude .git --exclude .direnv --print0)
+
+while IFS= read -r -d '' path; do
+  check-jsonschema --check-metaschema "$path" >/dev/null
+done < <(
+  fd --hidden --no-require-git --type f --glob '*.schema.json' --exclude .git --exclude .direnv --print0
+)
+
+workflow_files=()
+if [[ -d .github/workflows ]]; then
+  while IFS= read -r -d '' path; do
+    workflow_files+=("$path")
+  done < <(find .github/workflows -type f \( -name '*.yaml' -o -name '*.yml' \) -print0)
+fi
+
+if [[ -n "${workflow_files[*]:-}" ]]; then
+  actionlint -no-color "${workflow_files[@]}"
+  for workflow in "${workflow_files[@]}"; do
+    while IFS= read -r action; do
+      action="${action%\"}"
+      action="${action#\"}"
+      action="${action%\'}"
+      action="${action#\'}"
+      case "$action" in
+        ./* | docker://*)
+          continue
+          ;;
+        *@*)
+          ref="${action##*@}"
+          if [[ ! "$ref" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            printf '%s: third-party action must use a full commit SHA: %s\n' "$workflow" "$action" >&2
+            exit 1
+          fi
+          ;;
+        *)
+          printf '%s: invalid action reference: %s\n' "$workflow" "$action" >&2
+          exit 1
+          ;;
+      esac
+    done < <(awk '$1 == "-" && $2 == "uses:" { print $3 }' "$workflow")
+  done
+fi
+
+printf 'nix-packages content checks passed\n'

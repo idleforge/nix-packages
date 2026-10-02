@@ -1,0 +1,811 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+
+# Render the canonical checker without adding a private flake input.
+exec python3 - "$@" <<'PY'
+#!/usr/bin/env python3
+"""Check and fix objective Markdown prose quality rules for IdleForge repositories."""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import json
+import re
+import subprocess
+import sys
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable, Pattern
+
+
+FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+ATX_HEADING_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)")
+SETEXT_RE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
+THEMATIC_BREAK_RE = re.compile(
+    r"^ {0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$"
+)
+LIST_ITEM_RE = re.compile(r"^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]+|$)")
+BLOCKQUOTE_RE = re.compile(r"^ {0,3}>")
+REFERENCE_RE = re.compile(r"^ {0,3}\[(?:\^[^\]]+|[^\]]+)\]:")
+DIRECTIVE_RE = re.compile(r"^ {0,3}(?:::{3,}|\$\$)")
+DEFINITION_RE = re.compile(r"^ {0,3}:[ \t]+")
+HTML_START_RE = re.compile(
+    r"^ {0,3}(?:"
+    r"<!--|<\?|<!\[CDATA\[|<![A-Z]|"
+    r"</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|"
+    r"col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|"
+    r"footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|"
+    r"link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|"
+    r"section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:[ \t>/]|$)|"
+    r"</?(?:pre|script|style|textarea)(?:[ \t>]|$)"
+    r")",
+    re.IGNORECASE,
+)
+GENERIC_HTML_TAG_RE = re.compile(r"^ {0,3}</?[A-Za-z][^>]*>[ \t]*$")
+IGNORED_FALLBACK_PARTS = {
+    ".direnv",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "node_modules",
+    "target",
+}
+
+
+@dataclass(frozen=True)
+class Finding:
+    line: int
+    before: str
+    after: str
+    separator: str
+
+
+@dataclass(frozen=True)
+class StyleFinding:
+    rule_id: str
+    line: int
+    column: int
+    message: str
+    text: str
+    fixable: bool = False
+
+
+@dataclass(frozen=True)
+class Rule:
+    rule_id: str
+    message: str
+    pattern: Pattern[str]
+    fixable: bool = False
+
+
+@dataclass(frozen=True)
+class RepositoryConfig:
+    generated_prefixes: tuple[str, ...] = ()
+    generated_paths: tuple[str, ...] = ()
+    generated_globs: tuple[str, ...] = ()
+    managed_markers: tuple[str, ...] = ()
+    baseline: str | None = None
+
+
+REPORT_RULES = (
+    Rule(
+        "style.em-dash",
+        "replace the em dash with sentence punctuation chosen for this sentence",
+        re.compile("—"),
+    ),
+)
+
+
+SAFE_RULES = (
+    Rule(
+        "style.curly-quote",
+        "replace curly quotation marks with straight quotation marks",
+        re.compile("[“”‘’]"),
+        fixable=True,
+    ),
+)
+
+
+ALL_RULES = (*REPORT_RULES, *SAFE_RULES)
+
+
+CURLY_REPLACEMENTS = {
+    "“": '"',
+    "”": '"',
+    "‘": "'",
+    "’": "'",
+}
+
+
+def _has_unescaped_pipe(line: str) -> bool:
+    escaped = False
+    in_code = False
+    code_ticks = 0
+    index = 0
+    while index < len(line):
+        char = line[index]
+        if char == "\\" and not escaped:
+            escaped = True
+            index += 1
+            continue
+        if char == "`" and not escaped:
+            end = index
+            while end < len(line) and line[end] == "`":
+                end += 1
+            ticks = end - index
+            if not in_code:
+                in_code = True
+                code_ticks = ticks
+            elif ticks == code_ticks:
+                in_code = False
+                code_ticks = 0
+            index = end
+            escaped = False
+            continue
+        if char == "|" and not escaped and not in_code:
+            return True
+        escaped = False
+        index += 1
+    return False
+
+
+def _ends_with_hard_break(line: str) -> bool:
+    if line.endswith("  "):
+        return True
+    slash_count = len(line) - len(line.rstrip("\\"))
+    return slash_count % 2 == 1
+
+
+def _mark_protected_lines(lines: list[str]) -> list[bool]:
+    protected = [False] * len(lines)
+    if not lines:
+        return protected
+
+    index = 0
+    if lines[0].strip() in {"---", "+++"}:
+        frontmatter_delimiter = lines[0].strip()
+        protected[0] = True
+        index = 1
+        while index < len(lines):
+            protected[index] = True
+            if lines[index].strip() in {frontmatter_delimiter, "..."}:
+                index += 1
+                break
+            index += 1
+
+    fence_char: str | None = None
+    fence_length = 0
+    directive_close: str | None = None
+    html_close: str | None = None
+    html_until_blank = False
+    indented_code = False
+
+    while index < len(lines):
+        line = lines[index]
+        stripped = line.strip()
+
+        if fence_char is not None:
+            protected[index] = True
+            close = re.match(r"^ {0,3}(`+|~+)[ \t]*$", line)
+            if (
+                close
+                and close.group(1)[0] == fence_char
+                and len(close.group(1)) >= fence_length
+            ):
+                fence_char = None
+                fence_length = 0
+            index += 1
+            continue
+
+        fence = FENCE_RE.match(line)
+        if fence:
+            marker = fence.group(1)
+            protected[index] = True
+            fence_char = marker[0]
+            fence_length = len(marker)
+            index += 1
+            continue
+
+        if directive_close is not None:
+            protected[index] = True
+            if stripped == directive_close:
+                directive_close = None
+            index += 1
+            continue
+
+        if stripped == "$$":
+            protected[index] = True
+            directive_close = "$$"
+            index += 1
+            continue
+        directive = re.match(r"^ {0,3}(:{3,})(?:[^:].*)?$", line)
+        if directive:
+            protected[index] = True
+            directive_close = directive.group(1)
+            index += 1
+            continue
+
+        if html_close is not None or html_until_blank:
+            protected[index] = True
+            if html_close is not None and html_close.lower() in line.lower():
+                html_close = None
+            elif html_until_blank and not stripped:
+                html_until_blank = False
+            index += 1
+            continue
+
+        if HTML_START_RE.match(line) or GENERIC_HTML_TAG_RE.match(line):
+            protected[index] = True
+            if "<!--" in line and "-->" not in line:
+                html_close = "-->"
+            elif "<?" in line and "?>" not in line:
+                html_close = "?>"
+            elif "<![CDATA[" in line and "]]>" not in line:
+                html_close = "]" + "]>"
+            else:
+                raw_tag = re.match(
+                    r"^ {0,3}<(?P<tag>pre|script|style|textarea)(?:[ \t>])",
+                    line,
+                    re.IGNORECASE,
+                )
+                if raw_tag and f"</{raw_tag.group('tag')}>".lower() not in line.lower():
+                    html_close = f"</{raw_tag.group('tag')}>"
+                elif not re.search(r"</[A-Za-z][^>]*>[ \t]*$", line):
+                    html_until_blank = True
+            index += 1
+            continue
+
+        is_indented = line.startswith(("\t", "    "))
+        if indented_code:
+            if stripped and is_indented:
+                protected[index] = True
+                index += 1
+                continue
+            if not stripped:
+                protected[index] = True
+                index += 1
+                continue
+            indented_code = False
+        if is_indented and (index == 0 or not lines[index - 1].strip()):
+            protected[index] = True
+            indented_code = True
+            index += 1
+            continue
+
+        if (
+            ATX_HEADING_RE.match(line)
+            or THEMATIC_BREAK_RE.match(line)
+            or BLOCKQUOTE_RE.match(line)
+            or REFERENCE_RE.match(line)
+            or DIRECTIVE_RE.match(line)
+            or _has_unescaped_pipe(line)
+        ):
+            protected[index] = True
+
+        if SETEXT_RE.match(line) or DEFINITION_RE.match(line):
+            protected[index] = True
+            if index > 0:
+                protected[index - 1] = True
+
+        index += 1
+
+    index = 0
+    while index < len(lines):
+        if not (REFERENCE_RE.match(lines[index]) or DEFINITION_RE.match(lines[index])):
+            index += 1
+            continue
+        protected[index] = True
+        cursor = index + 1
+        while cursor < len(lines):
+            candidate = lines[cursor]
+            if candidate.startswith((" ", "\t")):
+                protected[cursor] = True
+                cursor += 1
+                continue
+            if (
+                not candidate.strip()
+                and cursor + 1 < len(lines)
+                and lines[cursor + 1].startswith((" ", "\t"))
+            ):
+                protected[cursor] = True
+                cursor += 1
+                continue
+            break
+        index = cursor
+
+    return protected
+
+
+def hard_wrap_findings(text: str) -> tuple[Finding, ...]:
+    lines = text.splitlines()
+    protected = _mark_protected_lines(lines)
+    findings: list[Finding] = []
+
+    for index in range(len(lines) - 1):
+        before = lines[index]
+        after = lines[index + 1]
+        if not before.strip() or not after.strip():
+            continue
+        if protected[index] or protected[index + 1]:
+            continue
+        if _ends_with_hard_break(before):
+            continue
+        if LIST_ITEM_RE.match(after):
+            continue
+        before_text = before.rstrip()
+        after_text = after.lstrip()
+        split_hyphenated_word = (
+            len(before_text) >= 2
+            and before_text[-1] == "-"
+            and before_text[-2].isalnum()
+            and after_text[:1].isalnum()
+        )
+        separator = "" if split_hyphenated_word else " "
+        findings.append(
+            Finding(
+                line=index + 1,
+                before=before_text,
+                after=after_text,
+                separator=separator,
+            )
+        )
+    return tuple(findings)
+
+
+def reflow_markdown(text: str) -> tuple[str, tuple[Finding, ...]]:
+    findings = hard_wrap_findings(text)
+    if not findings:
+        return text, findings
+
+    lines = text.splitlines()
+    joined_boundaries = {finding.line - 1: finding.separator for finding in findings}
+    output = [lines[0]]
+    for index, line in enumerate(lines[1:]):
+        if index in joined_boundaries:
+            output[-1] = f"{output[-1].rstrip()}{joined_boundaries[index]}{line.lstrip()}"
+        else:
+            output.append(line)
+
+    newline = "\r\n" if "\r\n" in text and text.count("\n") == text.count("\r\n") else "\n"
+    result = newline.join(output)
+    if text.endswith(("\n", "\r")):
+        result += newline
+    return result, findings
+
+
+def _mask_inline_code(line: str) -> str:
+    masked = list(line)
+    index = 0
+    while index < len(line):
+        if line[index] != "`":
+            index += 1
+            continue
+        end = index
+        while end < len(line) and line[end] == "`":
+            end += 1
+        marker = line[index:end]
+        close = line.find(marker, end)
+        if close < 0:
+            index = end
+            continue
+        close_end = close + len(marker)
+        masked[index:close_end] = " " * (close_end - index)
+        index = close_end
+    return "".join(masked)
+
+
+def _replacement(match: re.Match[str]) -> str:
+    return CURLY_REPLACEMENTS[match.group(0)]
+
+
+def _line_style_findings(line: str, line_number: int) -> list[StyleFinding]:
+    masked = _mask_inline_code(line)
+    findings: list[StyleFinding] = []
+    for rule in ALL_RULES:
+        for match in rule.pattern.finditer(masked):
+            findings.append(
+                StyleFinding(
+                    rule_id=rule.rule_id,
+                    line=line_number,
+                    column=match.start() + 1,
+                    message=rule.message,
+                    text=line[match.start() : match.end()],
+                    fixable=rule.fixable,
+                )
+            )
+    findings.sort(key=lambda finding: (finding.column, finding.rule_id))
+    return findings
+
+
+def lint_markdown(text: str) -> tuple[StyleFinding, ...]:
+    lines = text.splitlines()
+    protected = _mark_protected_lines(lines)
+    findings: list[StyleFinding] = []
+    for index, line in enumerate(lines):
+        if protected[index]:
+            continue
+        findings.extend(_line_style_findings(line, index + 1))
+    return tuple(findings)
+
+
+def _replace_rule(
+    line: str,
+    rule: Rule,
+    replacement: Callable[[re.Match[str]], str],
+) -> tuple[str, int]:
+    masked = _mask_inline_code(line)
+    matches = list(rule.pattern.finditer(masked))
+    if not matches:
+        return line, 0
+    updated = line
+    for match in reversed(matches):
+        updated = updated[: match.start()] + replacement(match) + updated[match.end() :]
+    return updated, len(matches)
+
+
+def fix_style_markdown(text: str) -> tuple[str, int]:
+    raw_lines = text.splitlines(keepends=True)
+    lines = [raw.rstrip("\r\n") for raw in raw_lines]
+    protected = _mark_protected_lines(lines)
+    changed = 0
+    output: list[str] = []
+
+    for index, raw in enumerate(raw_lines):
+        line = lines[index]
+        newline = raw[len(line) :]
+        if protected[index]:
+            output.append(raw)
+            continue
+        updated = line
+        for rule in SAFE_RULES:
+            updated, count = _replace_rule(updated, rule, _replacement)
+            changed += count
+        output.append(updated + newline)
+
+    if not raw_lines and text:
+        return text, 0
+    return "".join(output), changed
+
+
+def _string_tuple(value: object, field: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{field} must be an array of strings")
+    return tuple(value)
+
+
+def _optional_string(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    path = Path(value)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"{field} must be a repository-relative path")
+    return value
+
+
+def load_config(root: Path) -> RepositoryConfig:
+    config_path = root / ".markdown-prose.toml"
+    if not config_path.is_file():
+        return RepositoryConfig()
+    payload = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    if payload.get("version") != 1:
+        raise ValueError(f"{config_path}: version must be 1")
+    return RepositoryConfig(
+        generated_prefixes=_string_tuple(payload.get("generated_prefixes"), "generated_prefixes"),
+        generated_paths=_string_tuple(payload.get("generated_paths"), "generated_paths"),
+        generated_globs=_string_tuple(payload.get("generated_globs"), "generated_globs"),
+        managed_markers=_string_tuple(payload.get("managed_markers"), "managed_markers"),
+        baseline=_optional_string(payload.get("baseline"), "baseline"),
+    )
+
+
+def _discover_root(start: Path) -> Path:
+    candidate = start.resolve()
+    if candidate.is_file():
+        candidate = candidate.parent
+    for directory in (candidate, *candidate.parents):
+        if (directory / ".markdown-prose.toml").is_file() or (directory / ".git").exists():
+            return directory
+    return candidate
+
+
+def _relative(root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def is_generated_markdown(path: Path, text: str | None = None) -> bool:
+    root = _discover_root(path)
+    config = load_config(root)
+    relative = _relative(root, path)
+    if relative in config.generated_paths:
+        return True
+    if any(relative.startswith(prefix.rstrip("/") + "/") for prefix in config.generated_prefixes):
+        return True
+    if any(fnmatch.fnmatch(relative, pattern) for pattern in config.generated_globs):
+        return True
+    if text is None:
+        text = path.read_text(encoding="utf-8")
+    marker_window = text[:1024]
+    return any(marker in marker_window for marker in config.managed_markers)
+
+
+def tracked_markdown_paths(root: Path) -> list[Path]:
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z", "--", "*.md"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return sorted(
+            path
+            for path in root.rglob("*.md")
+            if path.is_file() and not IGNORED_FALLBACK_PARTS.intersection(path.relative_to(root).parts)
+        )
+    return [
+        root / raw.decode("utf-8")
+        for raw in result.stdout.split(b"\0")
+        if raw and (root / raw.decode("utf-8")).is_file()
+    ]
+
+
+def _expand_paths(root: Path, arguments: list[str]) -> list[Path]:
+    if not arguments:
+        return tracked_markdown_paths(root)
+
+    paths: set[Path] = set()
+    for argument in arguments:
+        raw = Path(argument)
+        path = raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+        if path.is_dir():
+            paths.update(candidate for candidate in path.rglob("*.md") if candidate.is_file())
+        elif path.is_file() and path.suffix.lower() == ".md":
+            paths.add(path)
+        else:
+            raise ValueError(f"not a Markdown file or directory: {argument}")
+    return sorted(paths)
+
+
+def _finding_groups(text: str) -> dict[str, list[Finding | StyleFinding]]:
+    groups: dict[str, list[Finding | StyleFinding]] = {}
+    wraps = list(hard_wrap_findings(text))
+    if wraps:
+        groups["structure.hard-wrap"] = wraps
+    for finding in lint_markdown(text):
+        groups.setdefault(finding.rule_id, []).append(finding)
+    return groups
+
+
+def _baseline_payload(root: Path, paths: list[Path]) -> dict[str, object]:
+    files: dict[str, dict[str, int]] = {}
+    for path in paths:
+        groups = _finding_groups(path.read_text(encoding="utf-8"))
+        if groups:
+            files[_relative(root, path)] = {
+                rule_id: len(findings) for rule_id, findings in sorted(groups.items())
+            }
+    return {
+        "version": 1,
+        "files": files,
+    }
+
+
+def _load_baseline(root: Path, config: RepositoryConfig) -> dict[str, dict[str, int]] | None:
+    if config.baseline is None:
+        return None
+    path = root / config.baseline
+    if not path.is_file():
+        raise ValueError(f"Markdown baseline does not exist: {config.baseline}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise ValueError(f"{config.baseline}: version must be 1")
+    raw_files = payload.get("files")
+    if not isinstance(raw_files, dict):
+        raise ValueError(f"{config.baseline}: files must be an object")
+    files: dict[str, dict[str, int]] = {}
+    for relative, raw_counts in raw_files.items():
+        if not isinstance(relative, str) or not relative or not isinstance(raw_counts, dict):
+            raise ValueError(f"{config.baseline}: invalid file entry")
+        counts: dict[str, int] = {}
+        for rule_id, count in raw_counts.items():
+            if not isinstance(rule_id, str) or not rule_id or not isinstance(count, int) or count < 1:
+                raise ValueError(f"{config.baseline}: invalid finding count for {relative}")
+            counts[rule_id] = count
+        if counts:
+            files[relative] = counts
+    return files
+
+
+def _print_finding(root: Path, path: Path, finding: Finding | StyleFinding) -> None:
+    if isinstance(finding, Finding):
+        print(
+            f"{_relative(root, path)}:{finding.line}: "
+            "structure.hard-wrap: non-semantic Markdown line break"
+        )
+    else:
+        print(
+            f"{_relative(root, path)}:{finding.line}:{finding.column}: "
+            f"{finding.rule_id}: {finding.message}"
+        )
+
+
+def _run_check(root: Path, paths: list[Path], config: RepositoryConfig) -> int:
+    baseline = _load_baseline(root, config)
+    if baseline is None:
+        total = 0
+        affected_files = 0
+        for path in paths:
+            groups = _finding_groups(path.read_text(encoding="utf-8"))
+            if groups:
+                affected_files += 1
+            for findings in groups.values():
+                for finding in findings:
+                    _print_finding(root, path, finding)
+                total += len(findings)
+        if total:
+            print(
+                f"Found {total} Markdown quality finding(s) across "
+                f"{affected_files} of {len(paths)} Markdown file(s).",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Markdown quality check passed for {len(paths)} file(s).")
+        return 0
+
+    failures = 0
+    baseline_debt = 0
+    current_paths = {_relative(root, path) for path in paths}
+    for path in paths:
+        relative = _relative(root, path)
+        groups = _finding_groups(path.read_text(encoding="utf-8"))
+        allowed = baseline.get(relative, {})
+        for rule_id in sorted(set(groups) | set(allowed)):
+            findings = groups.get(rule_id, [])
+            current_count = len(findings)
+            allowed_count = allowed.get(rule_id, 0)
+            baseline_debt += current_count
+            if current_count > allowed_count:
+                for finding in findings[allowed_count:]:
+                    _print_finding(root, path, finding)
+                failures += current_count - allowed_count
+            elif current_count < allowed_count:
+                print(
+                    f"{relative}: baseline.stale: {rule_id} has {current_count} finding(s), "
+                    f"baseline allows {allowed_count}; regenerate the baseline"
+                )
+                failures += 1
+    for relative in sorted(set(baseline) - current_paths):
+        print(f"{relative}: baseline.stale: file no longer exists; regenerate the baseline")
+        failures += 1
+    if failures:
+        print(
+            f"Markdown quality check failed with {failures} baseline regression/staleness "
+            f"finding(s); {baseline_debt} grandfathered finding(s) remain.",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"Markdown quality check passed for {len(paths)} file(s); "
+        f"{baseline_debt} baseline finding(s) remain."
+    )
+    return 0
+
+
+def _run_baseline(root: Path, paths: list[Path]) -> int:
+    print(json.dumps(_baseline_payload(root, paths), indent=2, sort_keys=True))
+    return 0
+
+
+def _run_fix(root: Path, paths: list[Path]) -> int:
+    changed_files = 0
+    removed_boundaries = 0
+    safe_rewrites = 0
+    skipped_generated_files = 0
+    generated_findings = 0
+    remaining_findings = 0
+
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        wrap_findings = hard_wrap_findings(text)
+        style_findings = lint_markdown(text)
+        finding_count = len(wrap_findings) + len(style_findings)
+        if not finding_count:
+            continue
+        if is_generated_markdown(path, text):
+            skipped_generated_files += 1
+            generated_findings += finding_count
+            print(f"skip generated {_relative(root, path)} ({finding_count} finding(s))")
+            continue
+
+        reflowed, _ = reflow_markdown(text)
+        fixed, file_rewrites = fix_style_markdown(reflowed)
+        if fixed != text:
+            path.write_text(fixed, encoding="utf-8", newline="")
+            changed_files += 1
+        removed_boundaries += len(wrap_findings)
+        safe_rewrites += file_rewrites
+
+        after_wraps = hard_wrap_findings(fixed)
+        after_styles = lint_markdown(fixed)
+        if fixed != text:
+            print(
+                f"fixed {_relative(root, path)} "
+                f"({len(wrap_findings)} hard wrap(s), {file_rewrites} safe rewrite(s))"
+            )
+        for finding in after_wraps:
+            print(
+                f"{_relative(root, path)}:{finding.line}: "
+                "structure.hard-wrap: non-semantic Markdown line break"
+            )
+        for finding in after_styles:
+            print(
+                f"{_relative(root, path)}:{finding.line}:{finding.column}: "
+                f"{finding.rule_id}: {finding.message}"
+            )
+        remaining_findings += len(after_wraps) + len(after_styles)
+
+    print(
+        f"Fixed {removed_boundaries} hard wrap(s) and {safe_rewrites} safe style rewrite(s) "
+        f"across {changed_files} canonical Markdown file(s); "
+        f"{remaining_findings} manual finding(s) and {generated_findings} finding(s) in "
+        f"{skipped_generated_files} generated file(s) remain."
+    )
+    return 1 if remaining_findings or generated_findings else 0
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Check, baseline, or fix objective Markdown prose quality rules."
+    )
+    parser.add_argument("command", choices=("check", "baseline", "fix"))
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        help="Markdown files or directories; defaults to all tracked Markdown files",
+    )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository root; defaults to the current directory",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    root = args.root.resolve()
+    try:
+        config = load_config(root)
+        paths = _expand_paths(root, args.paths)
+    except (OSError, ValueError, json.JSONDecodeError, subprocess.CalledProcessError) as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    if args.command == "check":
+        try:
+            return _run_check(root, paths, config)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+    if args.command == "baseline":
+        return _run_baseline(root, paths)
+    return _run_fix(root, paths)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+PY
+

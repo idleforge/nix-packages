@@ -21,6 +21,9 @@ if grep -RInE 'idleforge/(agents|project-template)|git@github.com/idleforge/(age
   exit 1
 fi
 
+bash ./scripts/markdown-prose check
+bash ./scripts/check-content
+bash ./scripts/check-links internal
 
 check-jsonschema \
   --schemafile .idleforge/schema/release-units-v1.schema.json \

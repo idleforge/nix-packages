@@ -2,7 +2,7 @@
   "contract": "idleforge.repository-activation-state/v1",
   "files": {
     ".copier-answers.yml": {
-      "sha256": "6156ae2c19c6cc58946e243a9d50a54c8eb8a93e0820da7db21149633d9f61e4"
+      "sha256": "47585c25b9bea2288e9a3d1b8f4f29c64dbd3a6027d2cfbf516c924e1d066e75"
     },
     ".envrc": {
       "sha256": "7ecaeb2bc568fd6c25e8c0e25ae958132d145ca5d38621ad3a34dcec9a4f3a96"
@@ -41,16 +41,16 @@
       "sha256": "729a79c336079be07b5e49369333eae176559bfbd4b6a9aa78803a0d8ee6cdc3"
     },
     "README.md": {
-      "sha256": "753b07878e5fdcb426ee68ee9bd91df210e00d5c16a8e50d9e3c88ff413aad80"
+      "sha256": "545b53ba80218201c42da94a8014bc6d4e8bffc472fbe1f33745c8f5e31efb5a"
     },
     "flake.lock": {
       "sha256": "44d57cfe4612dee7e1d24ccfa7afe646446e8e54c5421fb5b7154586a95c0f01"
     },
     "flake.nix": {
-      "sha256": "fcd778359eb458418691d7132cc39e30dc92bfab1eafd476f8a0a59f501eead6"
+      "sha256": "1b16517ffc41ee154dd93e1a18a72a3dac885d8eab6f72e270b3dd61635348ed"
     },
     "nix/checks/default.nix": {
-      "sha256": "ea988037103e097c373e0e22508dfcd4eea1945b0d75f052111d3a158b5c6667"
+      "sha256": "1a3711dcb8ca541f9be794c8b85a803981ae3f6c4f43ffbe9b06d21d251606dd"
     },
     "nix/packages/default.nix": {
       "sha256": "9f1130cc0a0fd3aae1aa94384f102c7ef28960e676fbfd162f946d1cdf1b6b5f"
@@ -67,8 +67,17 @@
     "scripts/build": {
       "sha256": "04849dcc6ad36cff259fa54844271d11b5dc074a8af5e8e66782d4a4bcdd8e72"
     },
+    "scripts/check-content": {
+      "sha256": "e4d2cd451839adbbd109efa7dd33f6321e3aa54d99aaea1f698bffee718083a4"
+    },
+    "scripts/check-links": {
+      "sha256": "92e29b13a058238c6189eb37be0c1afb78234d8d9acaf3fcfd139a80ad7ad11c"
+    },
     "scripts/health": {
       "sha256": "d25682fdd7035bf47f4d6192f24d7aaf0710ca0f618050e98803a8aa7aa3f53c"
+    },
+    "scripts/markdown-prose": {
+      "sha256": "8a4063ffec174d4767a0bedb8366a6acc5f0d8e8d830bc9fbdae6663909041d5"
     },
     "scripts/provenance": {
       "sha256": "d6881bf0b48b9294776cbc9da43d9b312b68d09db8ccb208dd4a2b5ebe96a6a9"
@@ -80,11 +89,14 @@
       "sha256": "5ef026202603520e556933120b841237b56feda0d4e8a4e5128b9ed9a6b55b49"
     },
     "scripts/validate": {
-      "sha256": "07cbdb5648d82982a52329022a2f34bc5318e36a67941498c5672669f15b3abf"
+      "sha256": "e428ec5212387bcc12083de93175928d98cd02119cbb11a8f751a823d88ee7f1"
+    },
+    "statix.toml": {
+      "sha256": "ed3723a99c0a4d22602832c52ad3cf74aedf2343ac024de71352feb4bdb6e08a"
     }
   },
   "template": {
-    "revision": "305e76f39456f23720ef9e517fd8a5c9c5dd1895",
+    "revision": "2e41ff14410c99f1574155e8477b7f762b837597",
     "source": "idleforge.project-template/public-foundation"
   }
 }

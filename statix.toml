@@ -1,0 +1,3 @@
+# Dotted option assignments keep independent NixOS/Home Manager settings readable.
+# Repeating an attribute prefix is intentional; conflicting definitions still fail evaluation.
+disabled = ["repeated_keys"]

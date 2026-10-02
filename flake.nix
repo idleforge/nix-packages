@@ -44,6 +44,12 @@
             packages = [
 
               pkgs.bash
+              pkgs.actionlint
+              pkgs.cacert
+              pkgs.git
+              pkgs.lychee
+              pkgs.python3
+              pkgs.taplo
               pkgs.check-jsonschema
               pkgs.fd
               pkgs.jq

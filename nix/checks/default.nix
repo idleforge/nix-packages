@@ -45,6 +45,11 @@ qualityChecks
           pkgs.shellcheck
           pkgs.statix
           pkgs.yq-go
+          pkgs.actionlint
+          pkgs.cacert
+          pkgs.lychee
+          pkgs.python3
+          pkgs.taplo
         ];
         src = source;
         SOURCE_REVISION = source.rev or source.dirtyRev or "uncommitted";

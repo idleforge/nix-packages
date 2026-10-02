@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+mode="${1:-internal}"
+markdown_files=()
+while IFS= read -r -d '' path; do
+  markdown_files+=("$path")
+done < <(
+  fd --hidden --no-require-git --type f --extension md --exclude .git --exclude .direnv --print0
+)
+
+if [[ -z "${markdown_files[*]:-}" ]]; then
+  exit 0
+fi
+
+case "$mode" in
+  internal)
+    lychee --offline --no-progress "${markdown_files[@]}"
+    ;;
+  external)
+    if [[ "${VALIDATION_NETWORK:-disabled}" != "enabled" ]]; then
+      printf 'external link checking requires VALIDATION_NETWORK=enabled\n' >&2
+      exit 2
+    fi
+    lychee --no-progress "${markdown_files[@]}"
+    ;;
+  *)
+    printf 'usage: %s [internal|external]\n' "$0" >&2
+    exit 2
+    ;;
+esac
