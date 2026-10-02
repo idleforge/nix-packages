@@ -8,6 +8,9 @@ shellcheck scripts/*
 bash ./scripts/repository-participation check >/dev/null
 
 check-jsonschema --schemafile .idleforge/schema/repository-v1.schema.json .idleforge/repository.yaml
+if [[ -f .idleforge/beads.json ]]; then
+  check-jsonschema --schemafile .idleforge/schema/repository-beads-v1.schema.json .idleforge/beads.json
+fi
 test -f .envrc
 test -f flake.nix
 test -f repository-development.json
