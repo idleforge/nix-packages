@@ -1,7 +1,7 @@
 contract: idleforge.repository/v1
 repository:
   id: idleforge/nix-packages
-  mission: Standalone Nix packages tailored to IdleForge.
+  mission: Public Nix packages maintained by IdleForge.
   group: infrastructure
 development:
   contract: idleforge.repository-development/v1
