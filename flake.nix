@@ -63,7 +63,7 @@
             env = {
               AGENT_RUNTIME_REAL_GIT = "${pkgs.git}/bin/git";
               AGENT_RUNTIME_REAL_GH = "${pkgs.gh}/bin/gh";
-              WORKTRUNK_WORKTREE_PATH = "~/projects/worktrees/{{ repo }}/{{ branch | sanitize }}";
+              WORKTRUNK_WORKTREE_PATH = "~/projects/worktrees/{{ repo }}/wt-{{ branch | sanitize }}";
 
             };
 
