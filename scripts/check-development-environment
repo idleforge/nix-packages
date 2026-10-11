@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+closure="${IDLEFORGE_DEPENDENCY_CLOSURE:?Nix development tool closure is required}"
+[[ -d "$closure" && "$closure" == /nix/store/* ]] || {
+  printf 'development closure must be a realized Nix store directory: %s\n' "$closure" >&2
+  exit 1
+}
+
+for tool in actionlint bash cacert check-jsonschema coreutils fd findutils gawk gh git gnugrep jq lychee nix nixfmt-rs python3 shellcheck statix taplo worktrunk yq-go; do
+  [[ -L "$closure/$tool" && -e "$closure/$tool" ]] || {
+    printf 'missing pinned development tool: %s\n' "$tool" >&2
+    exit 1
+  }
+done
+
+printf 'development closure verified: %s\n' "$closure"

@@ -9,6 +9,7 @@
     "profiles",
     "systems",
     "validation",
+    "environment",
     "structure",
     "nix",
     "packages",
@@ -39,6 +40,17 @@
       "properties": {
         "command": { "const": "./scripts/validate" },
         "flakeCheck": { "const": "validation" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entry", "dependencyAcquisition", "readyOnEntry", "worktreeIsolation"],
+      "properties": {
+        "entry": { "const": "nix-direnv" },
+        "dependencyAcquisition": { "const": "flake" },
+        "readyOnEntry": { "const": true },
+        "worktreeIsolation": { "const": true }
       }
     },
     "structure": { "$ref": "#/$defs/structure" },

@@ -8,6 +8,12 @@
     "command": "./scripts/validate",
     "flakeCheck": "validation"
   },
+  "environment": {
+    "entry": "nix-direnv",
+    "dependencyAcquisition": "flake",
+    "readyOnEntry": true,
+    "worktreeIsolation": true
+  },
   "structure": {
     "class": "meta",
     "slots": [

@@ -1,5 +1,6 @@
 {
   pkgs,
+  dependencyClosure,
 
   source,
   ...
@@ -50,9 +51,11 @@ qualityChecks
           pkgs.lychee
           pkgs.python3
           pkgs.taplo
+          dependencyClosure
         ];
         src = source;
-        SOURCE_REVISION = source.rev or source.dirtyRev or "uncommitted";
+        IDLEFORGE_DEPENDENCY_CLOSURE = dependencyClosure;
+        SOURCE_REVISION = builtins.substring 0 40 (source.rev or source.dirtyRev or "uncommitted");
       }
       ''
         cp -R "$src" source

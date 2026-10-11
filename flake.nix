@@ -18,6 +18,43 @@
       inherit (nixpkgs) lib;
       systems = [ "x86_64-linux" ];
       forAllSystems = lib.genAttrs systems;
+      developmentTools =
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          tools = {
+            inherit (pkgs)
+              actionlint
+              bash
+              cacert
+              check-jsonschema
+              coreutils
+              fd
+              findutils
+              gawk
+              gh
+              git
+              gnugrep
+              jq
+              lychee
+              nix
+              nixfmt-rs
+              python3
+              shellcheck
+              statix
+              taplo
+              worktrunk
+              yq-go
+              ;
+          };
+          closure =
+            pkgs.linkFarm "nix-packages-development-tools-${builtins.hashFile "sha256" ./flake.lock}"
+              (lib.mapAttrsToList (name: path: { inherit name path; }) tools);
+        in
+        {
+          packages = builtins.attrValues tools;
+          inherit closure;
+        };
     in
     {
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-rs);
@@ -37,36 +74,17 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-
+          development = developmentTools system;
         in
         {
           default = pkgs.mkShell {
-            packages = [
-
-              pkgs.bash
-              pkgs.actionlint
-              pkgs.cacert
-              pkgs.git
-              pkgs.lychee
-              pkgs.python3
-              pkgs.taplo
-              pkgs.check-jsonschema
-              pkgs.fd
-              pkgs.jq
-              pkgs.nix
-              pkgs.nixfmt-rs
-              pkgs.shellcheck
-              pkgs.statix
-              pkgs.worktrunk
-              pkgs.yq-go
-            ];
+            packages = development.packages ++ [ development.closure ];
             env = {
               AGENT_RUNTIME_REAL_GIT = "${pkgs.git}/bin/git";
               AGENT_RUNTIME_REAL_GH = "${pkgs.gh}/bin/gh";
+              IDLEFORGE_DEPENDENCY_CLOSURE = "${development.closure}";
               WORKTRUNK_WORKTREE_PATH = "~/projects/worktrees/{{ repo }}/wt-{{ branch | sanitize }}";
-
             };
-
           };
         }
       );
@@ -75,12 +93,11 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-
+          development = developmentTools system;
         in
         import ./nix/checks {
-
           inherit pkgs;
-
+          dependencyClosure = development.closure;
           source = self;
         }
       );
