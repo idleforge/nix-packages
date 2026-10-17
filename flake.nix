@@ -80,8 +80,6 @@
           default = pkgs.mkShell {
             packages = development.packages ++ [ development.closure ];
             env = {
-              AGENT_RUNTIME_REAL_GIT = "${pkgs.git}/bin/git";
-              AGENT_RUNTIME_REAL_GH = "${pkgs.gh}/bin/gh";
               IDLEFORGE_DEPENDENCY_CLOSURE = "${development.closure}";
               WORKTRUNK_WORKTREE_PATH = "~/projects/worktrees/{{ repo }}/wt-{{ branch | sanitize }}";
             };
