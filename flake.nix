@@ -39,13 +39,13 @@
               lychee
               nix
               nixfmt-rs
-              python3
               shellcheck
               statix
               taplo
               worktrunk
               yq-go
               ;
+            python3 = import ./nix/checks/development-python.nix { inherit pkgs; };
           };
           closure =
             pkgs.linkFarm "nix-packages-development-tools-${builtins.hashFile "sha256" ./flake.lock}"
