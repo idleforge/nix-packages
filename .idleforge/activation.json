@@ -90,9 +90,6 @@
     },
     "scripts/validate": {
       "sha256": "e428ec5212387bcc12083de93175928d98cd02119cbb11a8f751a823d88ee7f1"
-    },
-    "statix.toml": {
-      "sha256": "ed3723a99c0a4d22602832c52ad3cf74aedf2343ac024de71352feb4bdb6e08a"
     }
   },
   "template": {
